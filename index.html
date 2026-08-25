@@ -256,9 +256,9 @@ async function uploadTemp(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'temp','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('time','24h');fd.append('fileToUpload',file);
-    const r=await uploadXhr('https://litterbox.catbox.moe/resources/internals/api.php',fd,onProgress);
-    if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
+    const buf=await file.arrayBuffer();
+    const r=await uploadXhr('/api/upload',buf,onProgress,{'X-Provider':'temp','Content-Type':'application/octet-stream'});
+    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }
 }
 
@@ -269,9 +269,9 @@ async function uploadPerm(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'perm','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('time','720h');fd.append('fileToUpload',file);
-    const r=await uploadXhr('https://litterbox.catbox.moe/resources/internals/api.php',fd,onProgress);
-    if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
+    const buf=await file.arrayBuffer();
+    const r=await uploadXhr('/api/upload',buf,onProgress,{'X-Provider':'perm','Content-Type':'application/octet-stream'});
+    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }
 }
 
