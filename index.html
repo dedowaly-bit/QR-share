@@ -404,7 +404,14 @@ function startScanner(){
     document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
     document.getElementById('scanValue').textContent=decoded;
     let html='';
-    if(isUrl)html+='<button class="btn btn-primary btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">فتح وتحميل</button>';
+    const ghMatch=decoded.match(/[?&]f=([^&]+)/);
+    if(ghMatch){
+      const path=decodeURIComponent(ghMatch[1]);
+      html+='<button class="btn btn-primary btn-sm" style="margin:6px" id="dlBtn" onclick="downloadFromGitHub(\''+path.replace(/'/g,"\\'")+'\',this)">⬇️ تحميل داخل التطبيق</button>';
+      html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">🔗 فتح صفحة التنزيل</button>';
+    }else if(isUrl){
+      html+='<button class="btn btn-primary btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">فتح الرابط</button>';
+    }
     html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="navigator.clipboard.writeText(\''+decoded.replace(/'/g,"\\'")+'\');toast(\'تم النسخ ✅\')">📋 نسخ</button>';
     document.getElementById('scanActions').innerHTML=html;
     document.getElementById('scan-result').style.display='block';
@@ -419,6 +426,35 @@ function stopScanner(){
   try{scanner.clear();}catch(e){}
   scanning=false;
   document.getElementById('scanToggle').textContent='📷 بدء المسح';
+}
+
+function base64ToBytes(b64){
+  const bin=atob(b64.replace(/\s/g,''));
+  const len=bin.length;
+  const bytes=new Uint8Array(len);
+  for(let i=0;i<len;i++)bytes[i]=bin.charCodeAt(i);
+  return bytes;
+}
+
+async function downloadFromGitHub(path,btn){
+  try{
+    btn.disabled=true;const old=btn.textContent;btn.textContent='⏳ جاري التحميل...';
+    const apiUrl=`https://api.github.com/repos/dedowaly-bit/QR-share/contents/${path}`;
+    const res=await fetch(apiUrl,{headers:{'User-Agent':'QR-Share'}});
+    if(!res.ok)throw new Error('تعذر تحميل الملف (تأكد إن الملف اترفع من بدري)');
+    const j=await res.json();
+    const bytes=base64ToBytes(j.content);
+    const blob=new Blob([bytes],{type:j.content_type||'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=j.name;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    btn.textContent='✅ تم التحميل';
+  }catch(e){
+    btn.disabled=false;btn.textContent='⬇️ تحميل داخل التطبيق';
+    toast('خطأ: '+e.message);
+  }
 }
 
 function toggleScanner(){
