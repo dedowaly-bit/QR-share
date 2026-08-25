@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QR Share — شارك ملفاتك بكود</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a1a;--card:#141428;--card2:#1a1a35;--primary:#7c4dff;--primary-light:#9c7bff;--accent:#00e5a0;--danger:#ff5470;--text:#e0e0f0;--dim:#6a6a8a;--border:#2a2a45}
+body{font-family:-apple-system,'Segoe UI',Tahoma,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+.header{padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)}
+.logo{width:42px;height:42px;background:linear-gradient(135deg,var(--primary),var(--accent));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.header h1{font-size:20px;font-weight:700}.header p{font-size:12px;color:var(--dim)}
+.tabs{display:flex;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:10}
+.tab{flex:1;padding:14px;text-align:center;cursor:pointer;font-size:15px;font-weight:600;color:var(--dim);transition:.2s;border-bottom:3px solid transparent}
+.tab.active{color:var(--primary-light);border-bottom-color:var(--primary)}
+.page{display:none;padding:16px;animation:fadeUp .3s}.page.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.pick-zone{border:2px dashed var(--border);border-radius:20px;padding:48px 20px;text-align:center;cursor:pointer;transition:.3s}
+.pick-zone:hover{border-color:var(--primary);background:rgba(124,77,255,.06)}
+.pick-zone .icon{font-size:52px;margin-bottom:12px}
+.pick-zone p{color:var(--dim);line-height:1.7}
+.file-info{background:var(--card);border-radius:16px;padding:16px;display:flex;align-items:center;gap:14px;margin-top:14px}
+.file-icon{font-size:36px}
+.file-name{font-weight:600;font-size:15px;word-break:break-all}
+.file-size{font-size:13px;color:var(--dim);margin-top:2px}
+.file-change{font-size:13px;color:var(--primary-light);cursor:pointer;margin-top:4px}
+.options{background:var(--card);border-radius:16px;padding:16px;margin-top:14px}
+.options h3{font-size:14px;color:var(--dim);margin-bottom:12px}
+.radio-group{display:flex;flex-direction:column;gap:10px}
+.radio-row{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;cursor:pointer;border:1px solid var(--border);transition:.2s}
+.radio-row:hover{border-color:var(--primary)}
+.radio-row.selected{border-color:var(--primary);background:rgba(124,77,255,.1)}
+.radio-dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--dim);display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+.radio-row.selected .radio-dot{border-color:var(--primary)}
+.radio-row.selected .radio-dot::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--primary)}
+.radio-label{font-weight:600;font-size:14px}
+.radio-desc{font-size:12px;color:var(--dim);margin-top:2px}
+.sub-options{margin-top:12px;padding:12px;background:var(--card2);border-radius:12px}
+.btn{width:100%;padding:14px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;transition:.2s;margin-top:14px}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:#6a3de8}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-outline{background:transparent;border:1.5px solid var(--primary);color:var(--primary-light)}
+.btn-outline:hover{background:rgba(124,77,255,.1)}
+.progress-wrap{margin-top:16px;text-align:center}
+.progress-bar{width:100%;height:6px;background:var(--card);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:3px;width:0%;transition:width .3s}
+.progress-text{font-size:13px;color:var(--dim)}
+.result{text-align:center;margin-top:16px}
+.result-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px}
+.result-badge.online{background:rgba(0,229,160,.15);color:var(--accent)}
+.qr-box{background:#fff;border-radius:20px;padding:16px;display:inline-block;margin-bottom:16px}
+.qr-box canvas{display:block;border-radius:8px}
+.link-text{font-size:12px;color:var(--dim);word-break:break-all;max-width:340px;margin:0 auto 16px;line-height:1.6;padding:10px;background:var(--card);border-radius:10px}
+.btn-row{display:flex;gap:10px;margin-top:10px}
+.btn-row .btn{flex:1;margin-top:0}
+.btn-sm{padding:11px;font-size:14px;border-radius:12px}
+.scanner-wrap{position:relative;width:100%;max-width:500px;margin:0 auto;aspect-ratio:1;border-radius:20px;overflow:hidden;background:#000}
+#scanner-reader{width:100%;height:100%}
+#scanner-reader img[alt="Info icon"]{display:none}
+.scan-overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
+.scan-corners{width:65%;aspect-ratio:1;position:relative}
+.scan-corners::before,.scan-corners::after,.scan-corners span::before,.scan-corners span::after{content:'';position:absolute;width:28px;height:28px;border-color:var(--accent);border-style:solid}
+.scan-corners::before{top:0;right:0;border-width:4px 4px 0 0;border-radius:0 12px 0 0}
+.scan-corners::after{bottom:0;right:0;border-width:0 4px 4px 0;border-radius:0 0 12px 0}
+.scan-corners span::before{top:0;left:0;border-width:4px 0 0 4px;border-radius:12px 0 0 0}
+.scan-corners span::after{bottom:0;left:0;border-width:0 0 4px 4px;border-radius:0 0 0 12px}
+.scan-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:8px 18px;border-radius:20px;font-size:13px;white-space:nowrap}
+.scan-result{background:var(--card);border-radius:16px;padding:20px;margin-top:14px;text-align:center}
+.scan-result .value{font-size:14px;word-break:break-all;padding:12px;background:var(--card2);border-radius:10px;margin:10px 0;line-height:1.6}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:14px;font-size:14px;font-weight:600;z-index:999;animation:toastIn .3s}
+.toast.ok{background:var(--accent);color:#000}.toast.err{background:var(--danger);color:#fff}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">📤</div>
+  <div><h1>QR Share</h1><p>شارك أي ملف بكود QR</p></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('send')">📤 إرسال</div>
+  <div class="tab" onclick="switchTab('scan')">📷 استقبال</div>
+</div>
+
+<!-- === SEND === -->
+<div id="page-send" class="page active">
+  <div id="mobile-section" class="options" style="display:none;margin-bottom:14px;text-align:center">
+    <h3 style="margin-bottom:8px">📱 فتح التطبيق على الموبايل</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:10px">مسح الكود ده بكاميرا الموبايل — لازم الموبايل والكومبيوتر على نفس الواي فاي</p>
+    <div style="background:#fff;display:inline-block;padding:10px;border-radius:14px">
+      <canvas id="mobileQR"></canvas>
+    </div>
+    <div id="mobileLink" style="font-size:12px;color:var(--accent);margin-top:8px;word-break:break-all"></div>
+  </div>
+
+  <div id="pick-area" class="pick-zone" onclick="document.getElementById('fileInput').click()">
+    <div class="icon">📁</div>
+    <p>اضغط لاختيار ملف<br><small>فيديو، صورة، صوت، PDF، APK... أي حاجة</small></p>
+  </div>
+  <input type="file" id="fileInput" onchange="onFilePicked(event)">
+
+  <div id="file-info" class="file-info" style="display:none">
+    <div class="file-icon" id="fileIcon">📄</div>
+    <div style="flex:1">
+      <div class="file-name" id="fileName"></div>
+      <div class="file-size" id="fileSize"></div>
+      <div class="file-change" onclick="document.getElementById('fileInput').click()">تغيير الملف</div>
+    </div>
+  </div>
+
+  <div id="options-panel" class="options" style="display:none">
+    <h3>طريقة المشاركة</h3>
+    <div class="radio-group">
+      <div class="radio-row selected" onclick="chooseProvider('temp')" id="opt-temp">
+        <div class="radio-dot"></div>
+        <div>
+          <div class="radio-label">⚡ رابط سريع (مؤقت)</div>
+          <div class="radio-desc">يشتغل من أي مكان — يصلاح بعد ساعة — لحد 100 ميجا</div>
+        </div>
+      </div>
+      <div class="radio-row" onclick="chooseProvider('perm')" id="opt-perm">
+        <div class="radio-dot"></div>
+        <div>
+          <div class="radio-label">🔗 رابط دائم</div>
+          <div class="radio-desc">مش بيمسح — لحد 200 ميجا</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="createBtn" onclick="createQR()">🔒 إنشاء كود QR</button>
+  </div>
+
+  <div id="progress-panel" class="progress-wrap" style="display:none">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">جاري التحضير...</div>
+  </div>
+
+  <div id="result-panel" class="result" style="display:none">
+    <div class="result-badge online" id="resultBadge">🌐 رابط أونلاين — يشتغل من أي مكان</div>
+    <div class="qr-box"><canvas id="qrCanvas"></canvas></div>
+    <div class="link-text" id="linkText"></div>
+    <div class="btn-row">
+      <button class="btn btn-outline btn-sm" onclick="copyLink()">📋 نسخ الرابط</button>
+      <button class="btn btn-outline btn-sm" onclick="shareLink()">📤 مشاركة</button>
+    </div>
+    <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="resetAll()">🔄 ملف جديد</button>
+  </div>
+
+  <div id="error-text" style="text-align:center;color:var(--danger);margin-top:12px;font-size:14px"></div>
+</div>
+
+<!-- === SCAN === -->
+<div id="page-scan" class="page">
+  <div class="scanner-wrap">
+    <div id="scanner-reader"></div>
+    <div class="scan-overlay">
+      <div class="scan-corners"><span></span></div>
+    </div>
+    <div class="scan-hint">وجّه الكاميرا ناحية كود QR</div>
+  </div>
+  <div id="scan-result" class="scan-result" style="display:none">
+    <div id="scanIcon" style="font-size:36px;margin-bottom:8px">🔍</div>
+    <div style="font-weight:700;font-size:16px" id="scanTitle">تم العثور على رابط!</div>
+    <div class="value" id="scanValue"></div>
+    <div class="btn-row" id="scanActions"></div>
+  </div>
+  <button class="btn btn-primary" style="margin-top:14px" id="scanToggle" onclick="toggleScanner()">📷 بدء المسح</button>
+</div>
+
+<script src="qrcode.min.js"></script>
+<script src="html5-qrcode.min.js"></script>
+<script>
+const MAX_TEMP=100*1024*1024,MAX_PERM=200*1024*1024;
+let pickedFile=null,provider='temp',currentLink='',scanner=null,scanning=false;
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='send'?0:1)));
+  document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+  document.getElementById('page-'+t).classList.add('active');
+  if(t==='scan'&&!scanning)startScanner();
+  if(t==='send'&&scanning)stopScanner();
+}
+
+function fileIcon(name){
+  const e=name.split('.').pop().toLowerCase();
+  const m={mp4:'🎬',mkv:'🎬',mov:'🎬',webm:'🎬',avi:'🎬',mp3:'🎵',m4a:'🎵',wav:'🎵',ogg:'🎵',
+    jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',webp:'🖼️',heic:'🖼️',pdf:'📕',txt:'📝',
+    doc:'📘',docx:'📘',xls:'📊',xlsx:'📊',ppt:'📙',pptx:'📙',zip:'📦',rar:'📦',apk:'📱',
+    json:'📋',csv:'📊',js:'💻',html:'🌐',css:'🎨'};
+  return m[e]||'📄';
+}
+
+function fmtSize(b){
+  if(b<1024)return b+' بايت';
+  if(b<1048576)return(b/1024).toFixed(1)+' KB';
+  if(b<1073741824)return(b/1048576).toFixed(1)+' MB';
+  return(b/1073741824).toFixed(2)+' GB';
+}
+
+function toast(msg,ok=true){
+  const d=document.createElement('div');
+  d.className='toast '+(ok?'ok':'err');d.textContent=msg;
+  document.body.appendChild(d);setTimeout(()=>d.remove(),2500);
+}
+
+function onFilePicked(e){
+  pickedFile=e.target.files[0];
+  if(!pickedFile)return;
+  document.getElementById('pick-area').style.display='none';
+  const fi=document.getElementById('file-info');fi.style.display='flex';
+  document.getElementById('fileIcon').textContent=fileIcon(pickedFile.name);
+  document.getElementById('fileName').textContent=pickedFile.name;
+  document.getElementById('fileSize').textContent=fmtSize(pickedFile.size);
+  document.getElementById('options-panel').style.display='block';
+  document.getElementById('result-panel').style.display='none';
+  document.getElementById('error-text').textContent='';
+}
+
+function chooseProvider(p){
+  provider=p;
+  document.getElementById('opt-temp').classList.toggle('selected',p==='temp');
+  document.getElementById('opt-perm').classList.toggle('selected',p==='perm');
+}
+
+function uploadXhr(url,body,onProgress,headers){
+  return new Promise((res,rej)=>{
+    const x=new XMLHttpRequest();
+    x.open('POST',url);x.responseType='text';
+    if(headers)Object.entries(headers).forEach(([k,v])=>x.setRequestHeader(k,v));
+    x.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total)};
+    x.onload=()=>{if(x.status>=200&&x.status<300)res(x.responseText);else rej(new Error('Server error '+x.status))};
+    x.onerror=()=>rej(new Error('Network error'));x.send(body);
+  });
+}
+
+let serverAvailable=null;
+async function checkServer(){
+  if(serverAvailable!==null)return serverAvailable;
+  try{await fetch('/upload',{method:'OPTIONS'});serverAvailable=true;}
+  catch(e){serverAvailable=false;}
+  return serverAvailable;
+}
+
+const CORS='https://corsproxy.io/?';
+
+async function uploadTemp(file,onProgress){
+  const useServer=await checkServer();
+  if(useServer){
+    const buf=await file.arrayBuffer();
+    const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'temp','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
+    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
+  }else{
+    const fd=new FormData();fd.append('file',file);
+    const r=await uploadXhr(CORS+encodeURIComponent('https://tmpfiles.org/api/v1/upload'),fd,onProgress);
+    const j=JSON.parse(r);if(j.status!=='success')throw new Error('فشل الرفع');return j.data.url.replace('tmpfiles.org/','tmpfiles.org/dl/');
+  }
+}
+
+async function uploadPerm(file,onProgress){
+  const useServer=await checkServer();
+  if(useServer){
+    const buf=await file.arrayBuffer();
+    const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'perm','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
+    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
+  }else{
+    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',file);
+    const r=await uploadXhr(CORS+encodeURIComponent('https://catbox.moe/user/api.php'),fd,onProgress);
+    if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
+  }
+}
+
+async function createQR(){
+  if(!pickedFile)return;
+  const btn=document.getElementById('createBtn');
+  btn.disabled=true;btn.textContent='جاري الرفع...';
+  document.getElementById('progress-panel').style.display='block';
+  document.getElementById('result-panel').style.display='none';
+  document.getElementById('error-text').textContent='';
+  const fill=document.getElementById('progressFill');
+  const ptext=document.getElementById('progressText');
+
+  if(provider==='temp'&&pickedFile.size>MAX_TEMP){
+    showErr('الملف أكبر من 100 ميجا — استخدم الرابط الدائم');btn.disabled=false;btn.textContent='🔒 إنشاء كود QR';return;
+  }
+  if(provider==='perm'&&pickedFile.size>MAX_PERM){
+    showErr('الرابط الدائم يدعم حتى 200 ميجا');btn.disabled=false;btn.textContent='🔒 إنشاء كود QR';return;
+  }
+
+  try{
+    const onP=(loaded,total)=>{
+      if(total){const p=(loaded/total*100);fill.style.width=p+'%';ptext.textContent='جاري الرفع... '+p.toFixed(0)+'%';}
+      else{fill.style.width='50%';ptext.textContent='جاري الرفع...';}
+    };
+    let link;
+    if(provider==='temp')link=await uploadTemp(pickedFile,onP);
+    else link=await uploadPerm(pickedFile,onP);
+    currentLink=link;
+    fill.style.width='100%';ptext.textContent='تم بنجاح!';
+    document.getElementById('progress-panel').style.display='none';
+    document.getElementById('linkText').textContent=link;
+    document.getElementById('resultBadge').textContent=provider==='temp'?'⚡ رابط مؤقت — يصلاح بعد ساعة':'🔗 رابط دائم — مش بيمسح';
+    const qr = qrcode(0, 'H');
+    qr.addData(link);
+    qr.make();
+    const canvas = document.getElementById('qrCanvas');
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+    };
+    img.src = qr.createDataURL(4, 4);
+    document.getElementById('result-panel').style.display='block';
+  }catch(e){
+    document.getElementById('progress-panel').style.display='none';
+    showErr(e.message||'حدث خطأ أثناء الرفع');
+  }
+  btn.disabled=false;btn.textContent='🔒 إنشاء كود QR';
+}
+
+function showErr(m){document.getElementById('error-text').textContent='⚠️ '+m}
+
+function copyLink(){
+  navigator.clipboard.writeText(currentLink).then(()=>toast('تم نسخ الرابط ✅')).catch(()=>toast('فشل النسخ',false));
+}
+
+function shareLink(){
+  if(navigator.share){navigator.share({title:pickedFile?pickedFile.name:'ملف',text:currentLink}).catch(()=>{})}
+  else{copyLink()}
+}
+
+function resetAll(){
+  pickedFile=null;currentLink='';
+  document.getElementById('pick-area').style.display='';
+  document.getElementById('file-info').style.display='none';
+  document.getElementById('options-panel').style.display='none';
+  document.getElementById('result-panel').style.display='none';
+  document.getElementById('progress-panel').style.display='none';
+  document.getElementById('error-text').textContent='';
+  document.getElementById('fileInput').value='';
+}
+
+// Scanner
+function startScanner(){
+  if(scanning)return;
+  scanner=new Html5QrcodeScanner('scanner-reader',{fps:10,qrbox:w=>Math.min(280,w-40)},/* verbose= */false);
+  scanner.render(decoded=>{
+    const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
+    document.getElementById('scanIcon').textContent=isUrl?'⬇️':'🔍';
+    document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
+    document.getElementById('scanValue').textContent=decoded;
+    let html='';
+    if(isUrl)html+='<button class="btn btn-primary btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">فتح وتحميل</button>';
+    html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="navigator.clipboard.writeText(\''+decoded.replace(/'/g,"\\'")+'\');toast(\'تم النسخ ✅\')">📋 نسخ</button>';
+    document.getElementById('scanActions').innerHTML=html;
+    document.getElementById('scan-result').style.display='block';
+    stopScanner();
+  });
+  scanning=true;
+  document.getElementById('scanToggle').textContent='⏹ إيقاف المسح';
+}
+
+function stopScanner(){
+  if(!scanning)return;
+  try{scanner.clear();}catch(e){}
+  scanning=false;
+  document.getElementById('scanToggle').textContent='📷 بدء المسح';
+}
+
+function toggleScanner(){
+  if(scanning){stopScanner();document.getElementById('scan-result').style.display='none';}
+  else{startScanner();document.getElementById('scan-result').style.display='none';}
+}
+
+// Auto-detect mode on load
+window.addEventListener('DOMContentLoaded',async()=>{
+  const s=await checkServer();
+  const d=document.getElementById('mode-status');
+  if(d)d.textContent=s?'🟢 سيرفر محلي — أسرع وأأمن':'🔵 اتصال مباشر — بيشتغل من أي مكان';
+  if(s){
+    try{
+      const r=await fetch('/ip');const data=await r.json();
+      const url='http://'+data.ip+':'+data.port;
+      const sec=document.getElementById('mobile-section');sec.style.display='block';
+      const qr=qrcode(0,'M');qr.addData(url);qr.make();
+      const c=document.getElementById('mobileQR');const img=new Image();
+      img.onload=()=>{c.width=img.width;c.height=img.height;c.getContext('2d').drawImage(img,0,0);};
+      img.src=qr.createDataURL(4,4);
+      document.getElementById('mobileLink').textContent=url;
+    }catch(e){}
+  }
+});
+</script>
+<div id="mode-status" style="text-align:center;padding:12px;font-size:12px;color:var(--dim)"></div>
+</body>
+</html>
