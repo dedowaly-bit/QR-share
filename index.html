@@ -115,18 +115,18 @@ input[type=file]{display:none}
   <div id="options-panel" class="options" style="display:none">
     <h3>طريقة المشاركة</h3>
     <div class="radio-group">
-      <div class="radio-row selected" onclick="chooseProvider('temp')" id="opt-temp">
+          <div class="radio-row selected" onclick="chooseProvider('temp')" id="opt-temp">
         <div class="radio-dot"></div>
         <div>
-          <div class="radio-label">⚡ رابط سريع (مؤقت)</div>
-          <div class="radio-desc">يشتغل من أي مكان — يصلاح بعد ساعة — لحد 100 ميجا</div>
+          <div class="radio-label">⚡ رابط سريع (24 ساعة)</div>
+          <div class="radio-desc">يشتغل من أي مكان — ي淴م بعد يوم — لحد 200 ميجا</div>
         </div>
       </div>
       <div class="radio-row" onclick="chooseProvider('perm')" id="opt-perm">
         <div class="radio-dot"></div>
         <div>
-          <div class="radio-label">🔗 رابط دائم</div>
-          <div class="radio-desc">مش بيمسح — لحد 200 ميجا</div>
+          <div class="radio-label">🔗 رابط دائم (30 يوم)</div>
+          <div class="radio-desc">بيتمسح بعد 30 يوم — لحد 200 ميجا</div>
         </div>
       </div>
     </div>
@@ -173,7 +173,7 @@ input[type=file]{display:none}
 <script src="qrcode.min.js"></script>
 <script src="html5-qrcode.min.js"></script>
 <script>
-const MAX_TEMP=100*1024*1024,MAX_PERM=200*1024*1024;
+const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
 let pickedFile=null,provider='temp',currentLink='',scanner=null,scanning=false;
 
 function switchTab(t){
@@ -269,8 +269,8 @@ async function uploadPerm(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'perm','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',file);
-    const r=await uploadXhr('https://catbox.moe/user/api.php',fd,onProgress);
+    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('time','720h');fd.append('fileToUpload',file);
+    const r=await uploadXhr('https://litterbox.catbox.moe/resources/internals/api.php',fd,onProgress);
     if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
   }
 }
