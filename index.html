@@ -239,8 +239,13 @@ function uploadXhr(url,body,onProgress,headers){
 let serverAvailable=null;
 async function checkServer(){
   if(serverAvailable!==null)return serverAvailable;
-  try{await fetch('/upload',{method:'OPTIONS'});serverAvailable=true;}
-  catch(e){serverAvailable=false;}
+  try{
+    const c=new AbortController();
+    const t=setTimeout(()=>c.abort(),2000);
+    const r=await fetch('/ip',{method:'GET',signal:c.signal});
+    clearTimeout(t);
+    serverAvailable=r.ok;
+  }catch(e){serverAvailable=false;}
   return serverAvailable;
 }
 
