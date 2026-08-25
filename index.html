@@ -249,8 +249,6 @@ async function checkServer(){
   return serverAvailable;
 }
 
-const CORS='https://corsproxy.io/?';
-
 async function uploadTemp(file,onProgress){
   const useServer=await checkServer();
   if(useServer){
@@ -258,9 +256,9 @@ async function uploadTemp(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'temp','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const fd=new FormData();fd.append('file',file);
-    const r=await uploadXhr(CORS+encodeURIComponent('https://tmpfiles.org/api/v1/upload'),fd,onProgress);
-    const j=JSON.parse(r);if(j.status!=='success')throw new Error('فشل الرفع');return j.data.url.replace('tmpfiles.org/','tmpfiles.org/dl/');
+    const fd=new FormData();fd.append('reqtype','fileupload');fd.append('time','24h');fd.append('fileToUpload',file);
+    const r=await uploadXhr('https://litterbox.catbox.moe/resources/internals/api.php',fd,onProgress);
+    if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
   }
 }
 
@@ -272,7 +270,7 @@ async function uploadPerm(file,onProgress){
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
     const fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',file);
-    const r=await uploadXhr(CORS+encodeURIComponent('https://catbox.moe/user/api.php'),fd,onProgress);
+    const r=await uploadXhr('https://catbox.moe/user/api.php',fd,onProgress);
     if(!r.trim().startsWith('http'))throw new Error('فشل الرفع');return r.trim();
   }
 }
