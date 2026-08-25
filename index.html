@@ -114,19 +114,24 @@ input[type=file]{display:none}
 
   <div id="options-panel" class="options" style="display:none">
     <h3>طريقة المشاركة</h3>
+    <div class="sub-options" style="margin-bottom:14px">
+      <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:8px">🔑 GitHub Token (يتخزن على جهازك فقط)</label>
+      <input id="gh-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:monospace">
+      <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.5">لازم توكن له صلاحية <b>repo</b>. اطلبه من github.com → Settings → Developer settings → Personal access tokens. مش بيتحفظ في الموقع، بس على متصفحك.</div>
+    </div>
     <div class="radio-group">
           <div class="radio-row selected" onclick="chooseProvider('temp')" id="opt-temp">
         <div class="radio-dot"></div>
         <div>
-          <div class="radio-label">⚡ رابط سريع (24 ساعة)</div>
-          <div class="radio-desc">يشتغل من أي مكان — ي淴م بعد يوم — لحد 200 ميجا</div>
+          <div class="radio-label">📤 رفع على GitHub</div>
+          <div class="radio-desc">يتخزن في المستودع ويبقى متاح دايمًا — لحد 75 ميجا</div>
         </div>
       </div>
       <div class="radio-row" onclick="chooseProvider('perm')" id="opt-perm">
         <div class="radio-dot"></div>
         <div>
-          <div class="radio-label">🔗 رابط دائم (30 يوم)</div>
-          <div class="radio-desc">بيتمسح بعد 30 يوم — لحد 200 ميجا</div>
+          <div class="radio-label">🔗 رفع على GitHub (احتياطي)</div>
+          <div class="radio-desc">نفس الطريقة بالضبط — استخدمها لو الأولى بطيئة</div>
         </div>
       </div>
     </div>
@@ -225,6 +230,53 @@ function chooseProvider(p){
   document.getElementById('opt-perm').classList.toggle('selected',p==='perm');
 }
 
+// ===== GitHub upload (works on GitHub Pages) =====
+// The token is entered by the user (stored only in their browser localStorage),
+// never hardcoded here, so the public repo stays safe.
+const GITHUB = {
+  repo: 'dedowaly-bit/QR-share',
+  branch: 'main'
+};
+
+function getGitHubToken(){
+  const input=document.getElementById('gh-token');
+  const v=(input&&input.value.trim())||localStorage.getItem('gh_token')||'';
+  return v;
+}
+
+function fileToBase64(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(',')[1]);
+    r.onerror=()=>rej(new Error('فشل قراءة الملف'));
+    r.readAsDataURL(file);
+  });
+}
+
+async function uploadToGitHub(file,onProgress){
+  const token=getGitHubToken();
+  if(!token)throw new Error('اكتب التوكن بتاعك GitHub الأول');
+  localStorage.setItem('gh_token',token);
+  const base64=await fileToBase64(file);
+  const safe=(file.name||'file').replace(/[^\w.\-]+/g,'_');
+  const fname=Date.now()+'_'+Math.random().toString(36).slice(2,8)+'_'+safe;
+  const path='uploads/'+fname;
+  const apiUrl=`https://api.github.com/repos/${GITHUB.repo}/contents/${path}`;
+  const body=JSON.stringify({message:'upload '+fname,content:base64,branch:GITHUB.branch});
+  const r=await new Promise((res,rej)=>{
+    const x=new XMLHttpRequest();
+    x.open('PUT',apiUrl);
+    x.setRequestHeader('Authorization','token '+token);
+    x.setRequestHeader('Content-Type','application/json');
+    x.setRequestHeader('User-Agent','QR-Share');
+    x.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total)};
+    x.onload=()=>{if(x.status>=200&&x.status<300)res(x.responseText);else rej(new Error('GitHub error '+x.status+' — تأكد التوكن صح'));};
+    x.onerror=()=>rej(new Error('Network error'));
+    x.send(body);
+  });
+  return `https://raw.githubusercontent.com/${GITHUB.repo}/${GITHUB.branch}/uploads/${fname}`;
+}
+
 function uploadXhr(url,body,onProgress,headers){
   return new Promise((res,rej)=>{
     const x=new XMLHttpRequest();
@@ -256,9 +308,7 @@ async function uploadTemp(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'temp','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const buf=await file.arrayBuffer();
-    const r=await uploadXhr('/api/upload',buf,onProgress,{'X-Provider':'temp','Content-Type':'application/octet-stream'});
-    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
+    return await uploadToGitHub(file,onProgress);
   }
 }
 
@@ -269,9 +319,7 @@ async function uploadPerm(file,onProgress){
     const r=await uploadXhr('/upload',buf,onProgress,{'X-Provider':'perm','X-File-Name':encodeURIComponent(file.name),'Content-Type':'application/octet-stream'});
     const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
   }else{
-    const buf=await file.arrayBuffer();
-    const r=await uploadXhr('/api/upload',buf,onProgress,{'X-Provider':'perm','Content-Type':'application/octet-stream'});
-    const j=JSON.parse(r);if(!j.ok)throw new Error(j.error||'فشل الرفع');return j.url;
+    return await uploadToGitHub(file,onProgress);
   }
 }
 
