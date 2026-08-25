@@ -274,7 +274,7 @@ async function uploadToGitHub(file,onProgress){
     x.onerror=()=>rej(new Error('Network error'));
     x.send(body);
   });
-  return `https://raw.githubusercontent.com/${GITHUB.repo}/${GITHUB.branch}/uploads/${fname}`;
+  return `https://dedowaly-bit.github.io/QR-share/d.html?f=uploads/${fname}`;
 }
 
 function uploadXhr(url,body,onProgress,headers){
