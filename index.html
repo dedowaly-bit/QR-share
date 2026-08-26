@@ -221,7 +221,7 @@ const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
 let pickedFile=null,provider='temp',currentLink='',scanning=false,mode='cloud';
 let sigRoom=null,sigES=null,pc=null,dc=null,p2pMeta=null,p2pChunks=[],p2pReceived=0,pendingCands=[],myCands=[];
 const SIGNAL='/signal';
-const isLocal = (location.protocol==='http:');
+const isLocal = (!location.hostname.endsWith('github.io'));
 
 function switchTab(t){
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='send'?0:1)));
@@ -600,7 +600,7 @@ function addCand(cand){
   if(pc && pc.remoteDescription && pc.remoteDescription.type) pc.addIceCandidate(cand).catch(()=>{});
   else pendingCands.push(cand);
 }
-const P2P_ERR='⚠️ الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي). استخدم ☁️ GitHub للرفع، أو افتح الموقع من http://<عنوان-اللابتوب>:8080';
+const P2P_ERR='⚠️ الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي): '+(location.protocol==='https:'?'افتح الرابط اللي على شاشة اللابتوب':'شغّل server.js وافتح الرابط اللي يظهر')+'.';
 
 function createPeerSend(){
   document.getElementById('options-panel').style.display='none';

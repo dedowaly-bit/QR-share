@@ -100,7 +100,7 @@ function collectBody(req) {
   });
 }
 
-http.createServer(async (req, res) => {
+const handler = async (req, res) => {
   // CORS headers for all responses
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -218,16 +218,35 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(PORT, () => {
+};
+
+const useHttps = fs.existsSync(path.join(DIR, 'cert.pem')) && fs.existsSync(path.join(DIR, 'key.pem'));
+let server;
+if (useHttps) {
+  try {
+    const opt = { key: fs.readFileSync(path.join(DIR, 'key.pem')), cert: fs.readFileSync(path.join(DIR, 'cert.pem')) };
+    server = https.createServer(opt, handler);
+  } catch (e) {
+    console.error('HTTPS failed, falling back to HTTP:', e.message);
+    server = http.createServer(handler);
+  }
+} else {
+  server = http.createServer(handler);
+}
+const PROTO = (server instanceof https.Server) ? 'https' : 'http';
+
+server.listen(PORT, () => {
   console.log('');
   console.log('  ╔══════════════════════════════════════╗');
   console.log('  ║       QR Share — شارك ملفاتك بكود     ║');
   console.log('  ╠══════════════════════════════════════╣');
   console.log('  ║                                      ║');
-  console.log('  ║   افتح المتصفح والصق اللينك ده:     ║');
+  console.log('  ║   على الموبايل افتح الرابط ده:       ║');
   console.log('  ║                                      ║');
-  console.log('  ║     http://localhost:8080             ║');
+  console.log('  ║     ' + PROTO + '://' + LOCAL_IP + ':' + PORT + '        ║');
   console.log('  ║                                      ║');
+  console.log('  ║   (لو ظهر تحذير شهادة اضغط «متقدم»   ║');
+  console.log('  ║    ثم «المتابعة رغم المخاطرة»)        ║');
   console.log('  ╚══════════════════════════════════════╝');
   console.log('');
   console.log('  لوقف السيرفر: Ctrl+C');
