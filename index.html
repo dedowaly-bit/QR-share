@@ -50,7 +50,7 @@ body{font-family:-apple-system,'Segoe UI',Tahoma,sans-serif;background:var(--bg)
 .result-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px}
 .result-badge.online{background:rgba(0,229,160,.15);color:var(--accent)}
 .qr-box{background:#fff;border-radius:20px;padding:16px;display:inline-block;margin-bottom:16px}
-.qr-box canvas{display:block;border-radius:8px}
+.qr-box canvas{display:block;border-radius:8px;max-width:100%;height:auto;image-rendering:pixelated}
 .link-text{font-size:12px;color:var(--dim);word-break:break-all;max-width:340px;margin:0 auto 16px;line-height:1.6;padding:10px;background:var(--card);border-radius:10px}
 .btn-row{display:flex;gap:10px;margin-top:10px}
 .btn-row .btn{flex:1;margin-top:0}
@@ -413,7 +413,7 @@ async function createQR(){
     document.getElementById('progress-panel').style.display='none';
     document.getElementById('linkText').textContent=link;
     document.getElementById('resultBadge').textContent=provider==='temp'?'⚡ رابط مؤقت — يصلاح بعد ساعة':'🔗 رابط دائم — مش بيمسح';
-    const qr = qrcode(0, 'H');
+    const qr = qrcode(0, 'L');
     qr.addData(link);
     qr.make();
     const canvas = document.getElementById('qrCanvas');
@@ -423,7 +423,7 @@ async function createQR(){
       canvas.height = img.height;
       canvas.getContext('2d').drawImage(img, 0, 0);
     };
-    img.src = qr.createDataURL(4, 4);
+    img.src = qr.createDataURL(12, 12);
     document.getElementById('result-panel').style.display='block';
   }catch(e){
     document.getElementById('progress-panel').style.display='none';
@@ -457,7 +457,7 @@ function resetAll(){
 // Scanner
 function startScanner(){
   if(scanning)return;
-  scanner=new Html5QrcodeScanner('scanner-reader',{fps:10,qrbox:w=>Math.min(280,w-40),videoConstraints:{facingMode:"environment"}},/* verbose= */false);
+  scanner=new Html5QrcodeScanner('scanner-reader',{fps:15,qrbox:w=>Math.min(400,w-20),videoConstraints:{facingMode:{ideal:"environment"}}},/* verbose= */false);
   scanner.render(decoded=>{
     const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
     document.getElementById('scanValue').textContent=decoded;
@@ -543,11 +543,11 @@ function createPeerSend(){
   window._peer=peer;
   peer.on('open',id=>{
     const code='p2p:'+id;
-    const qr=qrcode(0,'M');qr.addData(code);qr.make();
+    const qr=qrcode(0,'L');qr.addData(code);qr.make();
     const canvas=document.getElementById('p2pQR');
     const img=new Image();
     img.onload=()=>{canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);};
-    img.src=qr.createDataURL(4,4);
+    img.src=qr.createDataURL(12,12);
     const idBox=document.getElementById('p2p-id-box');idBox.style.display='block';
     document.getElementById('p2p-id').value=code;
     statusEl.textContent='⏳ بانتظار التليفون التاني... (أو انسخ الكود تحت واكتبه يدويًا في التليفون التاني)';
