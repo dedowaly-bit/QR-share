@@ -114,28 +114,58 @@ input[type=file]{display:none}
 
   <div id="options-panel" class="options" style="display:none">
     <h3>طريقة المشاركة</h3>
-    <div class="sub-options" style="margin-bottom:14px">
+    <div class="radio-group" style="margin-bottom:14px">
+      <div class="radio-row selected" onclick="chooseMode('p2p')" id="opt-p2p">
+        <div class="radio-dot"></div>
+        <div>
+          <div class="radio-label">⚡ نقل مباشر (P2P)</div>
+          <div class="radio-desc">من غير توكن — أسرع حاجة — مفيش حد لحجم الملف — لازم التليفون التاني يفتح التطبيق معاك</div>
+        </div>
+      </div>
+      <div class="radio-row" onclick="chooseMode('cloud')" id="opt-cloud">
+        <div class="radio-dot"></div>
+        <div>
+          <div class="radio-label">☁️ رفع على GitHub</div>
+          <div class="radio-desc">محتاج توكن — الملف يفضل موجود بعدين — لحد 75 ميجا</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cloud-sub" class="sub-options" style="display:none;margin-bottom:14px">
       <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:8px">🔑 GitHub Token (يتخزن على جهازك فقط)</label>
-      <input id="gh-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:monospace">
-      <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.5">لازم توكن له صلاحية <b>repo</b>. اطلبه من github.com → Settings → Developer settings → Personal access tokens. مش بيتحفظ في الموقع، بس على متصفحك.</div>
+      <input id="gh-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="width:100%;padding:11px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:monospace">
+      <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.5">لازم توكن له صلاحية <b>repo</b>. مش بيتحفظ في الموقع، بس على متصفحك.</div>
     </div>
-    <div class="radio-group">
-          <div class="radio-row selected" onclick="chooseProvider('temp')" id="opt-temp">
-        <div class="radio-dot"></div>
-        <div>
-          <div class="radio-label">📤 رفع على GitHub</div>
-          <div class="radio-desc">يتخزن في المستودع ويبقى متاح دايمًا — لحد 75 ميجا</div>
-        </div>
-      </div>
-      <div class="radio-row" onclick="chooseProvider('perm')" id="opt-perm">
-        <div class="radio-dot"></div>
-        <div>
-          <div class="radio-label">🔗 رفع على GitHub (احتياطي)</div>
-          <div class="radio-desc">نفس الطريقة بالضبط — استخدمها لو الأولى بطيئة</div>
-        </div>
-      </div>
+
+    <button class="btn btn-primary" id="createBtn" onclick="startShare()">🚀 ابدأ المشاركة</button>
+  </div>
+
+  <div id="p2p-send-panel" class="options" style="display:none">
+    <h3>📡 كود الاتصال</h3>
+    <p style="font-size:13px;color:var(--dim);line-height:1.7">افتح التطبيق على التليفون التاني → تبويب «المسح» → صور الكود ده. وهيبدأ النقل فورًا على طول سرعة النت.</p>
+    <div class="qr-box" style="background:#fff;border-radius:20px;padding:16px;display:inline-block;margin:12px auto">
+      <canvas id="p2pQR"></canvas>
     </div>
-    <button class="btn btn-primary" id="createBtn" onclick="createQR()">🔒 إنشاء كود QR</button>
+    <div id="p2p-status" style="font-size:14px;font-weight:600;color:var(--accent);margin:10px 0">⏳ بانتظار التليفون التاني...</div>
+    <div class="progress-wrap" id="p2p-progress-wrap" style="display:none">
+      <div class="progress-bar"><div class="progress-fill" id="p2p-fill"></div></div>
+      <div class="progress-text" id="p2p-ptext">0%</div>
+    </div>
+    <button class="btn btn-outline" onclick="resetSend()">إلغاء</button>
+  </div>
+
+  <div id="recv-panel" class="options" style="display:none">
+    <h3>📥 استقبال الملف</h3>
+    <div id="recv-meta" style="display:none;padding:12px;background:var(--card2);border-radius:12px;margin:10px 0">
+      <div style="font-weight:600" id="recv-name"></div>
+      <div style="font-size:13px;color:var(--dim)" id="recv-size"></div>
+    </div>
+    <div id="recv-status" style="font-size:14px;font-weight:600;color:var(--accent);margin:10px 0">⏳ جاري الاتصال...</div>
+    <div class="progress-wrap" id="recv-progress-wrap" style="display:none">
+      <div class="progress-bar"><div class="progress-fill" id="recv-fill"></div></div>
+      <div class="progress-text" id="recv-ptext">0%</div>
+    </div>
+    <button class="btn btn-outline" onclick="resetSend()">إلغاء</button>
   </div>
 
   <div id="progress-panel" class="progress-wrap" style="display:none">
@@ -177,9 +207,10 @@ input[type=file]{display:none}
 
 <script src="qrcode.min.js"></script>
 <script src="html5-qrcode.min.js"></script>
+<script src="peerjs.min.js"></script>
 <script>
 const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
-let pickedFile=null,provider='temp',currentLink='',scanner=null,scanning=false;
+let pickedFile=null,provider='temp',currentLink='',scanner=null,scanning=false,mode='p2p';
 
 function switchTab(t){
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='send'?0:1)));
@@ -228,6 +259,26 @@ function chooseProvider(p){
   provider=p;
   document.getElementById('opt-temp').classList.toggle('selected',p==='temp');
   document.getElementById('opt-perm').classList.toggle('selected',p==='perm');
+}
+
+function chooseMode(m){
+  mode=m;
+  document.getElementById('opt-p2p').classList.toggle('selected',m==='p2p');
+  document.getElementById('opt-cloud').classList.toggle('selected',m==='cloud');
+  document.getElementById('cloud-sub').style.display = m==='cloud'?'block':'none';
+}
+
+function startShare(){
+  if(!pickedFile){toast('اختار ملف الأول',false);return;}
+  if(mode==='p2p') createPeerSend();
+  else createQR();
+}
+
+function resetSend(){
+  document.getElementById('p2p-send-panel').style.display='none';
+  document.getElementById('options-panel').style.display='block';
+  document.getElementById('result-panel').style.display='none';
+  if(window._peer){try{window._peer.destroy();}catch(e){}window._peer=null;}
 }
 
 // ===== GitHub upload (works on GitHub Pages) =====
@@ -400,10 +451,19 @@ function startScanner(){
   scanner=new Html5QrcodeScanner('scanner-reader',{fps:10,qrbox:w=>Math.min(280,w-40)},/* verbose= */false);
   scanner.render(decoded=>{
     const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
-    document.getElementById('scanIcon').textContent=isUrl?'⬇️':'🔍';
-    document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
     document.getElementById('scanValue').textContent=decoded;
     let html='';
+    if(decoded.startsWith('p2p:')){
+      const peerId=decoded.slice(5);
+      document.getElementById('scanIcon').textContent='📡';
+      document.getElementById('scanTitle').textContent='كود اتصال مباشر!';
+      document.getElementById('scan-result').style.display='block';
+      stopScanner();
+      startP2PReceive(peerId);
+      return;
+    }
+    document.getElementById('scanIcon').textContent=isUrl?'⬇️':'🔍';
+    document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
     const ghMatch=decoded.match(/[?&]f=([^&]+)/);
     if(ghMatch){
       const path=decodeURIComponent(ghMatch[1]);
@@ -455,6 +515,111 @@ async function downloadFromGitHub(path,btn){
     btn.disabled=false;btn.textContent='⬇️ تحميل داخل التطبيق';
     toast('خطأ: '+e.message);
   }
+}
+
+// ===== P2P (WebRTC) direct transfer — no token, no size limit =====
+function createPeerSend(){
+  document.getElementById('options-panel').style.display='none';
+  document.getElementById('p2p-send-panel').style.display='block';
+  const statusEl=document.getElementById('p2p-status');
+  statusEl.textContent='⏳ جاري إنشاء كود الاتصال...';
+  const peer=new Peer();
+  window._peer=peer;
+  peer.on('open',id=>{
+    const code='p2p:'+id;
+    const qr=qrcode(0,'M');qr.addData(code);qr.make();
+    const canvas=document.getElementById('p2pQR');
+    const img=new Image();
+    img.onload=()=>{canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);};
+    img.src=qr.createDataURL(4,4);
+    statusEl.textContent='⏳ بانتظار التليفون التاني...';
+  });
+  peer.on('connection',conn=>{
+    window._conn=conn;
+    conn.on('open',()=>{
+      statusEl.textContent='🔄 جاري النقل...';
+      document.getElementById('p2p-progress-wrap').style.display='block';
+      sendFileP2P(conn,pickedFile);
+    });
+    conn.on('error',()=>{statusEl.textContent='⚠️ خطأ في الاتصال';});
+  });
+  peer.on('error',e=>{console.error(e);statusEl.textContent='⚠️ تعذر الاتصال بخادم PeerJS — جرب تاني';});
+}
+
+function sendFileP2P(conn,file){
+  const fill=document.getElementById('p2p-fill');
+  const ptext=document.getElementById('p2p-ptext');
+  conn.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mime:file.type||'application/octet-stream'}));
+  const chunkSize=16384;
+  let offset=0;
+  const sendNext=()=>{
+    if(offset>=file.size){
+      conn.send(JSON.stringify({type:'done'}));
+      document.getElementById('p2p-status').textContent='✅ تم الإرسال!';
+      fill.style.width='100%';ptext.textContent='100%';
+      return;
+    }
+    file.slice(offset,offset+chunkSize).arrayBuffer().then(buf=>{
+      conn.send(buf);
+      offset+=buf.byteLength;
+      const p=Math.min(100,Math.round(offset/file.size*100));
+      fill.style.width=p+'%';ptext.textContent=p+'%';
+      if(conn.dataChannel && conn.dataChannel.bufferedAmount>(1<<20)) setTimeout(sendNext,30);
+      else sendNext();
+    }).catch(()=>{document.getElementById('p2p-status').textContent='⚠️ خطأ في النقل';});
+  };
+  sendNext();
+}
+
+function startP2PReceive(peerId){
+  switchTab('send');
+  document.getElementById('options-panel').style.display='none';
+  document.getElementById('p2p-send-panel').style.display='none';
+  document.getElementById('recv-panel').style.display='block';
+  const statusEl=document.getElementById('recv-status');
+  statusEl.textContent='⏳ جاري الاتصال...';
+  const peer=new Peer();
+  window._peer=peer;
+  peer.on('open',()=>{
+    const conn=peer.connect(peerId,{reliable:true});
+    window._conn=conn;
+    conn.on('open',()=>{statusEl.textContent='🔄 جاري الاستقبال...';});
+    let meta=null,chunks=[],received=0;
+    conn.on('data',data=>{
+      if(typeof data==='string'){
+        try{const msg=JSON.parse(data);
+          if(msg.type==='meta'){
+            meta=msg;
+            document.getElementById('recv-meta').style.display='block';
+            document.getElementById('recv-name').textContent=meta.name;
+            document.getElementById('recv-size').textContent=fmtSize(meta.size);
+            document.getElementById('recv-progress-wrap').style.display='block';
+          }else if(msg.type==='done'){
+            finishRecv(meta,chunks);
+          }
+        }catch(e){}
+      }else{
+        chunks.push(data);received+=data.byteLength;
+        if(meta){
+          const p=Math.min(100,Math.round(received/meta.size*100));
+          document.getElementById('recv-fill').style.width=p+'%';
+          document.getElementById('recv-ptext').textContent=p+'%';
+        }
+      }
+    });
+    conn.on('error',()=>{statusEl.textContent='⚠️ خطأ في الاتصال';});
+  });
+  peer.on('error',e=>{console.error(e);statusEl.textContent='⚠️ تعذر الاتصال بخادم PeerJS';});
+}
+
+function finishRecv(meta,chunks){
+  const blob=new Blob(chunks,{type:meta.mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=meta.name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  document.getElementById('recv-status').textContent='✅ تم التنزيل: '+meta.name;
 }
 
 function toggleScanner(){
