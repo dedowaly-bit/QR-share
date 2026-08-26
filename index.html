@@ -119,7 +119,7 @@ input[type=file]{display:none}
         <div class="radio-dot"></div>
         <div>
           <div class="radio-label">⚡ نقل مباشر (P2P)</div>
-          <div class="radio-desc">من غير توكن — أسرع حاجة — مفيش حد لحجم الملف — لازم التليفونين يفتحوا الموقع من السيرفر المحلي (نفس الواي‌فاي): http://&lt;عنوان-اللابتوب&gt;:8080</div>
+          <div class="radio-desc">من غير توكن — أسرع حاجة — مفيش حد لحجم الملف — النقل مباشر بين التليفونين (عبر خادم إشارة مجاني)</div>
         </div>
       </div>
       <div class="radio-row selected" onclick="chooseMode('cloud')" id="opt-cloud">
@@ -216,6 +216,7 @@ input[type=file]{display:none}
 
 <script src="qrcode.min.js"></script>
 <script src="jsqr.min.js"></script>
+<script src="mqtt.min.js"></script>
 <script>
 const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
 let pickedFile=null,provider='temp',currentLink='',scanning=false,mode='cloud';
@@ -273,7 +274,6 @@ function chooseProvider(p){
 }
 
 function chooseMode(m){
-  if(m==='p2p' && !isLocal){ toast('الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي). استخدم ☁️ GitHub أو افتح الموقع من http://<عنوان-اللابتوب>:8080',false); document.getElementById('opt-p2p').classList.remove('selected'); document.getElementById('opt-cloud').classList.add('selected'); mode='cloud'; document.getElementById('cloud-sub').style.display='block'; return; }
   mode=m;
   document.getElementById('opt-p2p').classList.toggle('selected',m==='p2p');
   document.getElementById('opt-cloud').classList.toggle('selected',m==='cloud');
@@ -294,6 +294,8 @@ function resetSend(){
   if(pc){try{pc.close();}catch(e){}pc=null;}
   if(dc){try{dc.close();}catch(e){}dc=null;}
   if(sigES){try{sigES.close();}catch(e){}sigES=null;}
+  if(sigCloseFn){try{sigCloseFn();}catch(e){}sigCloseFn=null;}
+  sigSendFn=null;
   sigRoom=null;p2pMeta=null;p2pChunks=[];p2pReceived=0;pendingCands=[];
 }
 
@@ -573,23 +575,42 @@ async function downloadFromGitHub(path,btn){
   }
 }
 
-// ===== P2P (WebRTC) direct transfer via LOCAL signaling server =====
-// No PeerJS / no external server. Both phones must open the app from the
-// local server (http://<laptop-ip>:8080) on the same WiFi.
+// ===== P2P (WebRTC) direct transfer — no token, no size limit =====
+// Signaling: local SSE server (if opened from the local server) OR a public
+// MQTT broker over WSS (if opened from GitHub Pages) — no PeerJS involved.
 function setupPc(){
-  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-  pc.onicecandidate=(e)=>{ if(e.candidate){ myCands.push(e.candidate); sigSend(sigRoom,{type:'candidate',cand:e.candidate}); } };
+  pc=new RTCPeerConnection({iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+    {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'}
+  ]});
+  pc.onicecandidate=(e)=>{ if(e.candidate){ myCands.push(e.candidate); if(sigSendFn) sigSendFn({type:'candidate',cand:e.candidate}); } };
 }
-function openSignal(room,onMsg,onErr){
-  let opened=false;
-  const es=new EventSource(SIGNAL+'/events?room='+encodeURIComponent(room));
-  es.onopen=()=>{opened=true;};
-  es.onmessage=(e)=>{ try{ onMsg(JSON.parse(e.data)); }catch(_){} };
-  es.onerror=()=>{ if(!opened&&onErr) onErr(); };
-  sigES=es;
-}
-function sigSend(room,msg){
-  return fetch(SIGNAL+'/send?room='+encodeURIComponent(room),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(msg)}).catch(()=>{});
+let sigSendFn=null, sigCloseFn=null;
+function startSignaling(room, role, onMsg, onErr){
+  const tSub='qr/'+room+'/'+(role==='sender'?'r2s':'s2r');
+  const tPub='qr/'+room+'/'+(role==='sender'?'s2r':'r2s');
+  if(isLocal){
+    let opened=false;
+    const es=new EventSource(SIGNAL+'/events?room='+encodeURIComponent(tSub));
+    es.onopen=()=>{opened=true;};
+    es.onmessage=(e)=>{ try{ onMsg(JSON.parse(e.data)); }catch(_){} };
+    es.onerror=()=>{ if(!opened&&onErr) onErr(); };
+    sigES=es;
+    sigSendFn=(m)=>fetch(SIGNAL+'/send?room='+encodeURIComponent(tPub),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)}).catch(()=>{});
+    sigCloseFn=()=>{ try{es.close();}catch(_){} };
+  } else {
+    try{
+      const client=mqtt.connect('wss://broker.emqx.io:8084/mqtt',{clientId:'qr_'+Math.random().toString(36).slice(2),clean:true,reconnectPeriod:2000});
+      let sent=false;
+      client.on('connect',()=>{ client.subscribe(tSub); sent=true; });
+      client.on('message',(t,p)=>{ try{ onMsg(JSON.parse(p.toString())); }catch(_){} });
+      client.on('error',()=>{ if(!sent&&onErr) onErr(); });
+      client.on('close',()=>{ if(!sent&&onErr) onErr(); });
+      sigSendFn=(m)=>{ try{ client.publish(tPub, JSON.stringify(m)); }catch(_){} };
+      sigCloseFn=()=>{ try{ client.end(true); }catch(_){} };
+    }catch(e){ if(onErr) onErr(); }
+  }
 }
 async function applyRemote(desc){
   await pc.setRemoteDescription(desc);
@@ -600,7 +621,7 @@ function addCand(cand){
   if(pc && pc.remoteDescription && pc.remoteDescription.type) pc.addIceCandidate(cand).catch(()=>{});
   else pendingCands.push(cand);
 }
-const P2P_ERR='⚠️ الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي): '+(location.protocol==='https:'?'افتح الرابط اللي على شاشة اللابتوب':'شغّل server.js وافتح الرابط اللي يظهر')+'.';
+const P2P_ERR='⚠️ تعذر الاتصال بخادم الإشارة. جرّب ☁️ GitHub للرفع، أو شغّل السيرفر المحلي (node server.js) لنقل مباشر على نفس الواي‌فاي.';
 
 function createPeerSend(){
   document.getElementById('options-panel').style.display='none';
@@ -608,7 +629,7 @@ function createPeerSend(){
   const statusEl=document.getElementById('p2p-status');
   statusEl.textContent='⏳ جاري إنشاء كود الاتصال...';
   const room=Math.random().toString(36).slice(2,10);
-  sigRoom=room; myCands=[];
+  sigRoom=room; myCands=[]; p2pMeta=null; p2pChunks=[]; p2pReceived=0; pendingCands=[];
   const code='p2p:'+room;
   const qr=qrcode(0,'L');qr.addData(code);qr.make();
   const canvas=document.getElementById('p2pQR');
@@ -623,8 +644,8 @@ function createPeerSend(){
   dc.onopen=()=>{ statusEl.textContent='🔄 جاري النقل...'; document.getElementById('p2p-progress-wrap').style.display='block'; sendFileP2P(pickedFile); };
   dc.onmessage=()=>{};
   let sigOffer=null;
-  openSignal(room,(m)=>{
-    if(m.type==='request-offer'){ if(sigOffer){ sigSend(room,{type:'offer',sdp:sigOffer}); myCands.forEach(c=>sigSend(room,{type:'candidate',cand:c})); } return; }
+  startSignaling(room,'sender',(m)=>{
+    if(m.type==='request-offer'){ if(sigOffer){ sigSendFn({type:'offer',sdp:sigOffer}); myCands.forEach(c=>sigSendFn({type:'candidate',cand:c})); } return; }
     if(m.type==='answer'){ applyRemote(m.sdp); }
     else if(m.type==='candidate'){ addCand(m.cand); }
   },()=>{ statusEl.textContent=P2P_ERR; });
@@ -633,7 +654,7 @@ function createPeerSend(){
       const offer=await pc.createOffer();
       await pc.setLocalDescription(offer);
       sigOffer=pc.localDescription;
-      await sigSend(room,{type:'offer',sdp:sigOffer});
+      await sigSendFn({type:'offer',sdp:sigOffer});
     }catch(e){ statusEl.textContent='⚠️ خطأ في إنشاء الاتصال'; }
   })();
   statusEl.textContent='⏳ بانتظار التليفون التاني... (أو انسخ الكود تحت واكتبه يدويًا)';
@@ -672,21 +693,21 @@ function startP2PReceive(peerId){
   const statusEl=document.getElementById('recv-status');
   statusEl.textContent='⏳ جاري الاتصال...';
   const room=peerId.startsWith('p2p:')?peerId.slice(5):peerId;
-  sigRoom=room; myCands=[]; p2pChunks=[]; p2pReceived=0; p2pMeta=null;
+  sigRoom=room; myCands=[]; p2pChunks=[]; p2pReceived=0; p2pMeta=null; pendingCands=[];
   setupPc();
   pc.ondatachannel=(e)=>{ dc=e.channel; dc.binaryType='arraybuffer'; setupRecvChannel(dc,statusEl); };
-  openSignal(room,(m)=>{
+  startSignaling(room,'receiver',(m)=>{
     if(m.type==='offer'){
       if(pc.remoteDescription) return;
       applyRemote(m.sdp).then(async()=>{
         const answer=await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        await sigSend(room,{type:'answer',sdp:pc.localDescription});
-        myCands.forEach(c=>sigSend(room,{type:'candidate',cand:c}));
+        await sigSendFn({type:'answer',sdp:pc.localDescription});
+        myCands.forEach(c=>sigSendFn({type:'candidate',cand:c}));
       }).catch(()=>{ statusEl.textContent='⚠️ خطأ في الاتصال'; });
     } else if(m.type==='candidate'){ addCand(m.cand); }
   },()=>{ statusEl.textContent=P2P_ERR; });
-  sigSend(room,{type:'request-offer'});
+  sigSendFn({type:'request-offer'});
 }
 
 function setupRecvChannel(ch,statusEl){
