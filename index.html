@@ -448,7 +448,7 @@ function resetAll(){
 // Scanner
 function startScanner(){
   if(scanning)return;
-  scanner=new Html5QrcodeScanner('scanner-reader',{fps:10,qrbox:w=>Math.min(280,w-40)},/* verbose= */false);
+  scanner=new Html5QrcodeScanner('scanner-reader',{fps:10,qrbox:w=>Math.min(280,w-40),videoConstraints:{facingMode:"environment"}},/* verbose= */false);
   scanner.render(decoded=>{
     const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
     document.getElementById('scanValue').textContent=decoded;
