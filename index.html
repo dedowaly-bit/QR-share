@@ -119,7 +119,7 @@ input[type=file]{display:none}
         <div class="radio-dot"></div>
         <div>
           <div class="radio-label">⚡ نقل مباشر (P2P)</div>
-          <div class="radio-desc">من غير توكن — أسرع حاجة — مفيش حد لحجم الملف — لازم التليفون التاني يفتح التطبيق معاك</div>
+          <div class="radio-desc">من غير توكن — أسرع حاجة — مفيش حد لحجم الملف — لازم التليفونين يفتحوا الموقع من السيرفر المحلي (نفس الواي‌فاي): http://&lt;عنوان-اللابتوب&gt;:8080</div>
         </div>
       </div>
       <div class="radio-row selected" onclick="chooseMode('cloud')" id="opt-cloud">
@@ -216,10 +216,12 @@ input[type=file]{display:none}
 
 <script src="qrcode.min.js"></script>
 <script src="jsqr.min.js"></script>
-<script src="peerjs.min.js"></script>
 <script>
 const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
-let pickedFile=null,provider='temp',currentLink='',scanner=null,scanning=false,mode='cloud';
+let pickedFile=null,provider='temp',currentLink='',scanning=false,mode='cloud';
+let sigRoom=null,sigES=null,pc=null,dc=null,p2pMeta=null,p2pChunks=[],p2pReceived=0,pendingCands=[],myCands=[];
+const SIGNAL='/signal';
+const isLocal = (location.protocol==='http:');
 
 function switchTab(t){
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===(t==='send'?0:1)));
@@ -271,6 +273,7 @@ function chooseProvider(p){
 }
 
 function chooseMode(m){
+  if(m==='p2p' && !isLocal){ toast('الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي). استخدم ☁️ GitHub أو افتح الموقع من http://<عنوان-اللابتوب>:8080',false); document.getElementById('opt-p2p').classList.remove('selected'); document.getElementById('opt-cloud').classList.add('selected'); mode='cloud'; document.getElementById('cloud-sub').style.display='block'; return; }
   mode=m;
   document.getElementById('opt-p2p').classList.toggle('selected',m==='p2p');
   document.getElementById('opt-cloud').classList.toggle('selected',m==='cloud');
@@ -285,9 +288,13 @@ function startShare(){
 
 function resetSend(){
   document.getElementById('p2p-send-panel').style.display='none';
+  document.getElementById('recv-panel').style.display='none';
   document.getElementById('options-panel').style.display='block';
   document.getElementById('result-panel').style.display='none';
-  if(window._peer){try{window._peer.destroy();}catch(e){}window._peer=null;}
+  if(pc){try{pc.close();}catch(e){}pc=null;}
+  if(dc){try{dc.close();}catch(e){}dc=null;}
+  if(sigES){try{sigES.close();}catch(e){}sigES=null;}
+  sigRoom=null;p2pMeta=null;p2pChunks=[];p2pReceived=0;pendingCands=[];
 }
 
 // ===== GitHub upload (works on GitHub Pages) =====
@@ -566,63 +573,91 @@ async function downloadFromGitHub(path,btn){
   }
 }
 
-// ===== P2P (WebRTC) direct transfer — no token, no size limit =====
-const PEER_OPTS={config:{iceServers:[
-  {urls:'stun:stun.l.google.com:19302'},
-  {urls:'stun:global.stun.twilio.com:3478'},
-  {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
-  {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
-  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
-]}};
+// ===== P2P (WebRTC) direct transfer via LOCAL signaling server =====
+// No PeerJS / no external server. Both phones must open the app from the
+// local server (http://<laptop-ip>:8080) on the same WiFi.
+function setupPc(){
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.onicecandidate=(e)=>{ if(e.candidate){ myCands.push(e.candidate); sigSend(sigRoom,{type:'candidate',cand:e.candidate}); } };
+}
+function openSignal(room,onMsg,onErr){
+  let opened=false;
+  const es=new EventSource(SIGNAL+'/events?room='+encodeURIComponent(room));
+  es.onopen=()=>{opened=true;};
+  es.onmessage=(e)=>{ try{ onMsg(JSON.parse(e.data)); }catch(_){} };
+  es.onerror=()=>{ if(!opened&&onErr) onErr(); };
+  sigES=es;
+}
+function sigSend(room,msg){
+  return fetch(SIGNAL+'/send?room='+encodeURIComponent(room),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(msg)}).catch(()=>{});
+}
+async function applyRemote(desc){
+  await pc.setRemoteDescription(desc);
+  for(const c of pendingCands){ try{ await pc.addIceCandidate(c); }catch(_){} }
+  pendingCands=[];
+}
+function addCand(cand){
+  if(pc && pc.remoteDescription && pc.remoteDescription.type) pc.addIceCandidate(cand).catch(()=>{});
+  else pendingCands.push(cand);
+}
+const P2P_ERR='⚠️ الـP2P يتطلب فتح الموقع من السيرفر المحلي (نفس الواي‌فاي). استخدم ☁️ GitHub للرفع، أو افتح الموقع من http://<عنوان-اللابتوب>:8080';
+
 function createPeerSend(){
   document.getElementById('options-panel').style.display='none';
   document.getElementById('p2p-send-panel').style.display='block';
   const statusEl=document.getElementById('p2p-status');
   statusEl.textContent='⏳ جاري إنشاء كود الاتصال...';
-  const peer=new Peer(undefined,PEER_OPTS);
-  window._peer=peer;
-  peer.on('open',id=>{
-    const code='p2p:'+id;
-    const qr=qrcode(0,'L');qr.addData(code);qr.make();
-    const canvas=document.getElementById('p2pQR');
-    const img=new Image();
-    img.onload=()=>{canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);};
-    img.src=qr.createDataURL(12,12);
-    const idBox=document.getElementById('p2p-id-box');idBox.style.display='block';
-    document.getElementById('p2p-id').value=code;
-    statusEl.textContent='⏳ بانتظار التليفون التاني... (أو انسخ الكود تحت واكتبه يدويًا في التليفون التاني)';
-  });
-  peer.on('connection',conn=>{
-    window._conn=conn;
-    conn.on('open',()=>{
-      statusEl.textContent='🔄 جاري النقل...';
-      document.getElementById('p2p-progress-wrap').style.display='block';
-      sendFileP2P(conn,pickedFile);
-    });
-    conn.on('error',()=>{statusEl.textContent='⚠️ خطأ في الاتصال';});
-  });
-  peer.on('error',e=>{console.error(e);statusEl.textContent='⚠️ تعذر الاتصال بخادم PeerJS — جرب تاني';});
+  const room=Math.random().toString(36).slice(2,10);
+  sigRoom=room; myCands=[];
+  const code='p2p:'+room;
+  const qr=qrcode(0,'L');qr.addData(code);qr.make();
+  const canvas=document.getElementById('p2pQR');
+  const img=new Image();
+  img.onload=()=>{canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);};
+  img.src=qr.createDataURL(12,12);
+  const idBox=document.getElementById('p2p-id-box');idBox.style.display='block';
+  document.getElementById('p2p-id').value=code;
+  setupPc();
+  dc=pc.createDataChannel('file',{ordered:true});
+  dc.binaryType='arraybuffer';
+  dc.onopen=()=>{ statusEl.textContent='🔄 جاري النقل...'; document.getElementById('p2p-progress-wrap').style.display='block'; sendFileP2P(pickedFile); };
+  dc.onmessage=()=>{};
+  let sigOffer=null;
+  openSignal(room,(m)=>{
+    if(m.type==='request-offer'){ if(sigOffer){ sigSend(room,{type:'offer',sdp:sigOffer}); myCands.forEach(c=>sigSend(room,{type:'candidate',cand:c})); } return; }
+    if(m.type==='answer'){ applyRemote(m.sdp); }
+    else if(m.type==='candidate'){ addCand(m.cand); }
+  },()=>{ statusEl.textContent=P2P_ERR; });
+  (async()=>{
+    try{
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sigOffer=pc.localDescription;
+      await sigSend(room,{type:'offer',sdp:sigOffer});
+    }catch(e){ statusEl.textContent='⚠️ خطأ في إنشاء الاتصال'; }
+  })();
+  statusEl.textContent='⏳ بانتظار التليفون التاني... (أو انسخ الكود تحت واكتبه يدويًا)';
 }
 
-function sendFileP2P(conn,file){
+function sendFileP2P(file){
   const fill=document.getElementById('p2p-fill');
   const ptext=document.getElementById('p2p-ptext');
-  conn.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mime:file.type||'application/octet-stream'}));
+  dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mime:file.type||'application/octet-stream'}));
   const chunkSize=16384;
   let offset=0;
   const sendNext=()=>{
     if(offset>=file.size){
-      conn.send(JSON.stringify({type:'done'}));
+      dc.send(JSON.stringify({type:'done'}));
       document.getElementById('p2p-status').textContent='✅ تم الإرسال!';
       fill.style.width='100%';ptext.textContent='100%';
       return;
     }
     file.slice(offset,offset+chunkSize).arrayBuffer().then(buf=>{
-      conn.send(buf);
+      dc.send(buf);
       offset+=buf.byteLength;
       const p=Math.min(100,Math.round(offset/file.size*100));
       fill.style.width=p+'%';ptext.textContent=p+'%';
-      if(conn.dataChannel && conn.dataChannel.bufferedAmount>(1<<20)) setTimeout(sendNext,30);
+      if(dc.bufferedAmount>(1<<20)) setTimeout(sendNext,30);
       else sendNext();
     }).catch(()=>{document.getElementById('p2p-status').textContent='⚠️ خطأ في النقل';});
   };
@@ -636,48 +671,58 @@ function startP2PReceive(peerId){
   document.getElementById('recv-panel').style.display='block';
   const statusEl=document.getElementById('recv-status');
   statusEl.textContent='⏳ جاري الاتصال...';
-  const peer=new Peer(undefined,PEER_OPTS);
-  window._peer=peer;
-  peer.on('open',()=>{
-    const conn=peer.connect(peerId,{reliable:true});
-    window._conn=conn;
-    conn.on('open',()=>{statusEl.textContent='🔄 جاري الاستقبال...';});
-    let meta=null,chunks=[],received=0;
-    conn.on('data',data=>{
-      if(typeof data==='string'){
-        try{const msg=JSON.parse(data);
-          if(msg.type==='meta'){
-            meta=msg;
-            document.getElementById('recv-meta').style.display='block';
-            document.getElementById('recv-name').textContent=meta.name;
-            document.getElementById('recv-size').textContent=fmtSize(meta.size);
-            document.getElementById('recv-progress-wrap').style.display='block';
-          }else if(msg.type==='done'){
-            finishRecv(meta,chunks);
-          }
-        }catch(e){}
-      }else{
-        chunks.push(data);received+=data.byteLength;
-        if(meta){
-          const p=Math.min(100,Math.round(received/meta.size*100));
-          document.getElementById('recv-fill').style.width=p+'%';
-          document.getElementById('recv-ptext').textContent=p+'%';
+  const room=peerId.startsWith('p2p:')?peerId.slice(5):peerId;
+  sigRoom=room; myCands=[]; p2pChunks=[]; p2pReceived=0; p2pMeta=null;
+  setupPc();
+  pc.ondatachannel=(e)=>{ dc=e.channel; dc.binaryType='arraybuffer'; setupRecvChannel(dc,statusEl); };
+  openSignal(room,(m)=>{
+    if(m.type==='offer'){
+      if(pc.remoteDescription) return;
+      applyRemote(m.sdp).then(async()=>{
+        const answer=await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sigSend(room,{type:'answer',sdp:pc.localDescription});
+        myCands.forEach(c=>sigSend(room,{type:'candidate',cand:c}));
+      }).catch(()=>{ statusEl.textContent='⚠️ خطأ في الاتصال'; });
+    } else if(m.type==='candidate'){ addCand(m.cand); }
+  },()=>{ statusEl.textContent=P2P_ERR; });
+  sigSend(room,{type:'request-offer'});
+}
+
+function setupRecvChannel(ch,statusEl){
+  ch.onmessage=(ev)=>{
+    const data=ev.data;
+    if(typeof data==='string'){
+      try{ const msg=JSON.parse(data);
+        if(msg.type==='meta'){
+          p2pMeta=msg;
+          document.getElementById('recv-meta').style.display='block';
+          document.getElementById('recv-name').textContent=msg.name;
+          document.getElementById('recv-size').textContent=fmtSize(msg.size);
+          document.getElementById('recv-progress-wrap').style.display='block';
+        } else if(msg.type==='done'){
+          finishRecv(p2pMeta,p2pChunks);
         }
+      }catch(_){}
+    } else {
+      p2pChunks.push(data); p2pReceived+=data.byteLength;
+      if(p2pMeta){
+        const p=Math.min(100,Math.round(p2pReceived/p2pMeta.size*100));
+        document.getElementById('recv-fill').style.width=p+'%';
+        document.getElementById('recv-ptext').textContent=p+'%';
       }
-    });
-    conn.on('error',()=>{statusEl.textContent='⚠️ خطأ في الاتصال';});
-  });
-  peer.on('error',e=>{console.error(e);statusEl.textContent='⚠️ تعذر الاتصال بخادم PeerJS';});
+    }
+  };
 }
 
 function finishRecv(meta,chunks){
-  const blob=new Blob(chunks,{type:meta.mime});
+  const blob=new Blob(chunks,{type:(meta&&meta.mime)||'application/octet-stream'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url;a.download=meta.name;
+  a.href=url;a.download=meta?meta.name:'file';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
-  document.getElementById('recv-status').textContent='✅ تم التنزيل: '+meta.name;
+  document.getElementById('recv-status').textContent='✅ تم التنزيل: '+(meta?meta.name:'file');
 }
 
 function toggleScanner(){

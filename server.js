@@ -20,6 +20,9 @@ function getLocalIP() {
 
 const LOCAL_IP = getLocalIP();
 
+// In-memory signaling rooms for P2P (WebRTC) — no external dependencies.
+const rooms = new Map(); // room -> [{res, id}]
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css',
@@ -144,6 +147,51 @@ http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, url: resultUrl }));
     } catch (e) {
       console.error('Upload error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  // ===== P2P signaling over SSE (no PeerJS / no external server) =====
+  if (req.method === 'GET' && req.url.startsWith('/signal/events')) {
+    const u = new URL(req.url, 'http://localhost');
+    const room = u.searchParams.get('room') || 'default';
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.write('retry: 2000\n\n');
+    const id = Math.random().toString(36).slice(2);
+    if (!rooms.has(room)) rooms.set(room, []);
+    const client = { res, id };
+    rooms.get(room).push(client);
+    // notify existing peers that someone joined (so sender re-sends the offer)
+    for (const c of rooms.get(room)) {
+      if (c !== client) c.res.write(`event: ready\ndata: ${id}\n\n`);
+    }
+    req.on('close', () => {
+      const arr = rooms.get(room) || [];
+      rooms.set(room, arr.filter((c) => c !== client));
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url.startsWith('/signal/send')) {
+    try {
+      const u = new URL(req.url, 'http://localhost');
+      const room = u.searchParams.get('room') || 'default';
+      const from = u.searchParams.get('from') || '';
+      const body = await collectBody(req);
+      const clients = rooms.get(room) || [];
+      for (const c of clients) {
+        if (c.id !== from) c.res.write(`data: ${body.toString()}\n\n`);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
