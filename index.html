@@ -215,7 +215,7 @@ input[type=file]{display:none}
 </div>
 
 <script src="qrcode.min.js"></script>
-<script src="html5-qrcode.min.js"></script>
+<script src="jsqr.min.js"></script>
 <script src="peerjs.min.js"></script>
 <script>
 const MAX_TEMP=200*1024*1024,MAX_PERM=200*1024*1024;
@@ -455,46 +455,86 @@ function resetAll(){
 }
 
 // Scanner
-function startScanner(){
+let videoStream=null,scanRAF=null,scanVideo=null,scanCanvas=null,scanCtx=null;
+
+async function startScanner(){
   if(scanning)return;
-  scanner=new Html5QrcodeScanner('scanner-reader',{fps:15,qrbox:w=>Math.min(400,w-20),videoConstraints:{facingMode:{ideal:"environment"}}},/* verbose= */false);
-  scanner.render(decoded=>{
-    const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
-    document.getElementById('scanValue').textContent=decoded;
-    let html='';
-    if(decoded.startsWith('p2p:')){
-      const peerId=decoded.slice(5);
-      document.getElementById('scanIcon').textContent='📡';
-      document.getElementById('scanTitle').textContent='كود اتصال مباشر!';
-      document.getElementById('scan-result').style.display='block';
-      stopScanner();
-      startP2PReceive(peerId);
-      return;
-    }
-    document.getElementById('scanIcon').textContent=isUrl?'⬇️':'🔍';
-    document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
-    const ghMatch=decoded.match(/[?&]f=([^&]+)/);
-    if(ghMatch){
-      const path=decodeURIComponent(ghMatch[1]);
-      html+='<button class="btn btn-primary btn-sm" style="margin:6px" id="dlBtn" onclick="downloadFromGitHub(\''+path.replace(/'/g,"\\'")+'\',this)">⬇️ تحميل داخل التطبيق</button>';
-      html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">🔗 فتح صفحة التنزيل</button>';
-    }else if(isUrl){
-      html+='<button class="btn btn-primary btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">فتح الرابط</button>';
-    }
-    html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="navigator.clipboard.writeText(\''+decoded.replace(/'/g,"\\'")+'\');toast(\'تم النسخ ✅\')">📋 نسخ</button>';
-    document.getElementById('scanActions').innerHTML=html;
-    document.getElementById('scan-result').style.display='block';
+  const reader=document.getElementById('scanner-reader');
+  reader.innerHTML='';
+  scanVideo=document.createElement('video');
+  scanVideo.setAttribute('playsinline','');
+  scanVideo.setAttribute('webkit-playsinline','');
+  scanVideo.muted=true;
+  scanVideo.style.width='100%';
+  scanVideo.style.height='100%';
+  scanVideo.style.objectFit='cover';
+  reader.appendChild(scanVideo);
+  try{
+    videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+    scanVideo.srcObject=videoStream;
+    await scanVideo.play();
+    scanning=true;
+    scanCanvas=document.createElement('canvas');
+    scanCtx=scanCanvas.getContext('2d',{willReadFrequently:true});
+    document.getElementById('scanToggle').textContent='⏹ إيقاف المسح';
+    scanLoop();
+  }catch(e){
+    console.error(e);
+    toast('تعذر تشغيل الكاميرا: '+(e&&e.message?e.message:(e&&e.name)||e),false);
     stopScanner();
-  });
-  scanning=true;
-  document.getElementById('scanToggle').textContent='⏹ إيقاف المسح';
+  }
+}
+
+function scanLoop(){
+  if(!scanning||!scanVideo)return;
+  if(scanVideo.readyState>=2&&scanVideo.videoWidth>0){
+    scanCanvas.width=scanVideo.videoWidth;
+    scanCanvas.height=scanVideo.videoHeight;
+    scanCtx.drawImage(scanVideo,0,0,scanCanvas.width,scanCanvas.height);
+    try{
+      const img=scanCtx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
+      const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+      if(code&&code.data){ handleDecoded(code.data); return; }
+    }catch(e){}
+  }
+  scanRAF=requestAnimationFrame(scanLoop);
 }
 
 function stopScanner(){
-  if(!scanning)return;
-  try{scanner.clear();}catch(e){}
+  if(!scanning&&!videoStream)return;
   scanning=false;
+  if(scanRAF)cancelAnimationFrame(scanRAF);
+  if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;}
+  scanVideo=null;
   document.getElementById('scanToggle').textContent='📷 بدء المسح';
+}
+
+function handleDecoded(decoded){
+  stopScanner();
+  document.getElementById('scanValue').textContent=decoded;
+  let html='';
+  if(decoded.startsWith('p2p:')){
+    const peerId=decoded.slice(5);
+    document.getElementById('scanIcon').textContent='📡';
+    document.getElementById('scanTitle').textContent='كود اتصال مباشر!';
+    document.getElementById('scan-result').style.display='block';
+    startP2PReceive(peerId);
+    return;
+  }
+  const isUrl=decoded.startsWith('http://')||decoded.startsWith('https://');
+  document.getElementById('scanIcon').textContent=isUrl?'⬇️':'🔍';
+  document.getElementById('scanTitle').textContent=isUrl?'تم العثور على رابط تحميل!':'محتوى الكود';
+  const ghMatch=decoded.match(/[?&]f=([^&]+)/);
+  if(ghMatch){
+    const path=decodeURIComponent(ghMatch[1]);
+    html+='<button class="btn btn-primary btn-sm" style="margin:6px" id="dlBtn" onclick="downloadFromGitHub(\''+path.replace(/'/g,"\\'")+'\',this)">⬇️ تحميل داخل التطبيق</button>';
+    html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">🔗 فتح صفحة التنزيل</button>';
+  }else if(isUrl){
+    html+='<button class="btn btn-primary btn-sm" style="margin:6px" onclick="window.open(\''+decoded.replace(/'/g,"\\'")+'\',\'_blank\')">فتح الرابط</button>';
+  }
+  html+='<button class="btn btn-outline btn-sm" style="margin:6px" onclick="navigator.clipboard.writeText(\''+decoded.replace(/'/g,"\\'")+'\');toast(\'تم النسخ ✅\')">📋 نسخ</button>';
+  document.getElementById('scanActions').innerHTML=html;
+  document.getElementById('scan-result').style.display='block';
 }
 
 function base64ToBytes(b64){
